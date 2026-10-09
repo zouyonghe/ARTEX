@@ -76,35 +76,14 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 		}
 		buf[i] = keyChars[n.Int64()]
 	}
-	// Publish only complete key material without replacing another creator's key.
-	tmp, err := os.CreateTemp(keyDir, ".jwt-key-*")
+	key, created, err := publishJWTKey(path, buf)
 	if err != nil {
-		return nil, fmt.Errorf("create jwt key temporary file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(buf); err != nil {
-		tmp.Close()
-		return nil, fmt.Errorf("write jwt key: %w", err)
+	if created {
+		log.Printf("[auth] 新 JWT key 已写入 %s", path)
 	}
-	if err := tmp.Close(); err != nil {
-		return nil, fmt.Errorf("close jwt key: %w", err)
-	}
-	if err := os.Link(tmp.Name(), path); err != nil {
-		if os.IsExist(err) {
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil, fmt.Errorf("read concurrently created jwt key: %w", readErr)
-			}
-			key := strings.TrimSpace(string(data))
-			if len(key) < 32 {
-				return nil, fmt.Errorf("existing jwt key is invalid (not replaced); restore a trusted key before restarting")
-			}
-			return []byte(key), nil
-		}
-		return nil, fmt.Errorf("publish jwt key (filesystem must support hard links): %w", err)
-	}
-	log.Printf("[auth] 新 JWT key 已写入 %s", path)
-	return buf, nil
+	return key, nil
 }
 
 // signJWT issues a 7-day HS256 token for user ARTEX.
