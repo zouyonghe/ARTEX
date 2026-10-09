@@ -84,11 +84,14 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 		}
 		buf[i] = keyChars[n.Int64()]
 	}
-	if err := os.WriteFile(path, buf, 0600); err != nil {
-		return nil, fmt.Errorf("write jwt key: %w", err)
+	key, created, err := publishJWTKey(path, buf)
+	if err != nil {
+		return nil, err
 	}
-	log.Printf("[auth] 新 JWT key 已写入 %s", path)
-	return buf, nil
+	if created {
+		log.Printf("[auth] 新 JWT key 已写入 %s", path)
+	}
+	return key, nil
 }
 
 // signJWT issues a 7-day HS256 token for user ARTEX.
