@@ -223,7 +223,7 @@ func redactTransportError(err error) string {
 			host = u.Host
 		}
 		if uerr.Err != nil {
-			return fmt.Sprintf("%s %s: %s", uerr.Op, host, uerr.Err)
+			return fmt.Sprintf("%s %s: %s", uerr.Op, host, redactURLsInText(uerr.Err.Error()))
 		}
 		return fmt.Sprintf("%s %s: 未知错误", uerr.Op, host)
 	}
@@ -234,11 +234,38 @@ func redactTransportError(err error) string {
 // redactURLsInText 把一段文本里出现的 http(s) 地址替换成脱敏形态。
 //
 // 用于兜底那些拿不到结构化字段的错误（重定向策略错误、第三方库的自定义错误）。
-// 只识别 http/https 前缀，按空白与引号切分——地址不会包含这两类字符。
+// 引号字段也可能是相对重定向地址；非 HTTP(S) 字段整体隐藏，避免猜测凭据位置。
 func redactURLsInText(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
 		rest := s[i:]
+		if (s[i] == '"' || s[i] == '\'') && i+1 < len(s) {
+			// Go 的 URL 错误用 %q 引用地址；跳过转义字符，避免把 \"
+			// 误当结束引号，导致地址后半段的凭据原样流出。
+			end := i + 1
+			for end < len(s) && s[end] != s[i] {
+				if s[end] == '\\' && end+1 < len(s) {
+					end++
+				}
+				end++
+			}
+			if end < len(s) {
+				value := s[i+1 : end]
+				b.WriteByte(s[i])
+				if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+					b.WriteString(redactRequestTarget(value))
+				} else {
+					b.WriteString("(已隐藏)")
+				}
+				b.WriteByte(s[i])
+				i = end + 1
+				continue
+			}
+			// Truncated quoted errors may still contain relative credential URLs.
+			b.WriteByte(s[i])
+			b.WriteString("(已隐藏)")
+			break
+		}
 		if strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://") {
 			end := len(rest)
 			if j := strings.IndexAny(rest, " \t\n\"'"); j >= 0 {

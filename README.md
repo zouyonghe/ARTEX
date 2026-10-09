@@ -99,6 +99,10 @@ docker compose up -d          # 拉取 autumn27/artex 镜像 + postgres
 旧版 SSE 服务通常使用 `GET /sse` 建立事件流，再通过服务返回的
 `/message?sessionId=...` 接收 JSON-RPC 请求；配置时将 URL 填为 `/sse`，请求头按
 `Authorization=Bearer <token>` 填写。
+Legacy SSE 服务返回的 message endpoint 必须与配置的 SSE URL 同 origin（HTTP(S) 协议、主机及
+有效数值端口一致），公告不得自行指定 userinfo；相对路径可继承配置 URL 的认证信息。
+默认端口与显式 80/443 及其前导零表示等价，IPv6 地址按规范值比较，zone 名称区分大小写。
+跨 origin 的拆分部署请通过反向代理统一 origin；此校验仅限制公告端点，HTTP 重定向保护在独立 PR #13 中提供。
 
 ### 方式三：下载预编译二进制（Releases）
 
@@ -279,6 +283,26 @@ server {
 - 前端：`cd web && npm run dev`（`/api` 反代到后端，带热更新）
 - 测试：`go test ./...`
 - Mock 预览（无后端）：`cd web && NEXT_PUBLIC_MOCK=1 npm run dev`
+
+默认 Go 测试不会继承运行用的 `ARTEX_PG_DSN` 或 `config.json`：涉及 PostgreSQL
+的测试包会使用临时空配置，未显式启用时跳过 PG 集成测试，仍执行纯单元测试。
+需要集成验证时，仅通过 `ARTEX_TEST_PG_DSN` 指向**专用、可丢弃的测试数据库**：
+
+```bash
+ARTEX_TEST_PG_DSN='postgres://test_user:fixture@127.0.0.1:5432/artex_test?sslmode=disable' go test -p 1 ./...
+```
+
+测试会初始化 schema、写入种子和测试数据，并执行删除/清理；不要使用开发或生产数据库，
+测试库也不应包含真实任务、通知账户或 LLM 配置。原来用运行变量启用集成测试的流程需改用
+测试变量，正常启动程序的配置方式不变。包间 advisory lock 只协调测试并发，不提供数据隔离。
+显式设置测试 DSN 后，连接、锁获取或锁释放失败会让套件失败，不会以跳过集成测试的方式通过。
+共享套件锁固定在同一 PostgreSQL session，等待连接/锁的 setup 上限为 30 秒。
+显式 PG 验证使用 `-p 1` 顺序运行包，避免长套件使同一运行中的其他包等待共享锁超时；
+独立测试进程仍需协调，锁超时会失败而不跳过。未启用 PG 的纯单元检查不要求串行。
+
+`ARTEX_REVIEW_LIVE_CONFIG` 是独立的真实模型测试开关，可能请求外部或计费服务；
+未设置测试 DB 不等于禁止外网。只跑受控本地测试时也应确保未设置该开关及真实模型凭据。
+测试环境隔离不是安全沙箱，新增 PG 测试须使用现有 TestMain 的共享隔离入口，不自行读取运行配置。
 
 ---
 

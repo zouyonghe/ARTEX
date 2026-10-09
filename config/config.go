@@ -177,12 +177,20 @@ func (d Database) buildDSN() string {
 	return u.String()
 }
 
-// String is a redacted view of the resolved DSN (password masked) for logging.
+// Redact preserves PostgreSQL URL diagnostics without credentials. Non-URL or
+// malformed DSNs are hidden rather than returned verbatim.
 func Redact(dsn string) string {
 	u, err := url.Parse(dsn)
-	if err != nil {
-		return dsn
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Host == "" {
+		return "(DSN hidden)"
 	}
+	// A malformed password delimiter can make the parser treat it as a port/path.
+	if u.User == nil && strings.Contains(dsn, "@") {
+		return "(DSN hidden)"
+	}
+	// Query parameters can contain passwords or other connection credentials.
+	u.RawQuery, u.Fragment, u.RawFragment = "", "", ""
+	u.ForceQuery = false
 	if u.User != nil {
 		if _, hasPw := u.User.Password(); hasPw {
 			u.User = url.UserPassword(u.User.Username(), "****")

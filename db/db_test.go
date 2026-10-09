@@ -51,8 +51,7 @@ func TestApplySchemaRetriesOnlyDeadlocks(t *testing.T) {
 	}
 }
 
-// testDSN returns the configured DSN, skipping the test when neither the env var
-// nor a config file supplies one (DSN no longer has a built-in default).
+// testDSN returns the DSN isolated by TestMain, skipping without ARTEX_TEST_PG_DSN.
 func testDSN(t *testing.T) string {
 	t.Helper()
 	dsn, _, err := DSN()
@@ -62,7 +61,7 @@ func testDSN(t *testing.T) string {
 	return dsn
 }
 
-// TestOpenSeed opens the live dev PG, applies schema, seeds, and verifies the
+// TestOpenSeed opens the disposable test PG, applies schema, seeds, and verifies the
 // builtin agents + their variable catalog exist. Skips if PG is unreachable.
 func TestOpenSeed(t *testing.T) {
 	d, err := Open(testDSN(t))

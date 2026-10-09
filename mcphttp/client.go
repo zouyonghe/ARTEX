@@ -214,16 +214,20 @@ func readSSEEndpoint(r *bufio.Reader, base string) (string, error) {
 		}
 		u, err := url.Parse(candidate)
 		if err != nil {
-			return "", fmt.Errorf("mcp sse endpoint URL: %w", err)
+			return "", errors.New("mcp sse endpoint URL is invalid")
 		}
-		if !u.IsAbs() {
-			b, err := url.Parse(base)
-			if err != nil {
-				return "", err
-			}
-			candidate = b.ResolveReference(u).String()
+		if u.User != nil {
+			return "", errors.New("mcp sse endpoint must not supply userinfo")
 		}
-		return candidate, nil
+		b, err := url.Parse(base)
+		if err != nil {
+			return "", err
+		}
+		u = b.ResolveReference(u)
+		if !sameMCPOrigin(u, b) {
+			return "", errors.New("mcp sse endpoint must use the configured HTTP(S) origin")
+		}
+		return u.String(), nil
 	}
 }
 
