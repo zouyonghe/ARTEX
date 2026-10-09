@@ -56,12 +56,38 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	path := filepath.Join(keyDir, jwtKeyFilename)
 	// one-time migration out of the old in-workspace location.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if data, rerr := os.ReadFile(legacy); rerr == nil {
-				if werr := os.WriteFile(path, data, 0o600); werr == nil {
-					_ = os.Remove(legacy)
-					log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
+		if _, err := os.Stat(path); err == nil {
+			old, readErr := os.ReadFile(legacy)
+			if readErr != nil && !os.IsNotExist(readErr) {
+				return nil, fmt.Errorf("read legacy jwt key: %w", readErr)
+			}
+			if readErr == nil {
+				current, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return nil, fmt.Errorf("read destination jwt key: %w", readErr)
 				}
+				if strings.TrimSpace(string(current)) != strings.TrimSpace(string(old)) {
+					return nil, fmt.Errorf("jwt key migration conflict: existing destination differs; both copies preserved")
+				}
+			}
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			data, rerr := os.ReadFile(legacy)
+			if rerr != nil && !os.IsNotExist(rerr) {
+				return nil, fmt.Errorf("read legacy jwt key: %w", rerr)
+			}
+			if rerr == nil {
+				key, _, werr := publishJWTKey(path, data)
+				if werr != nil {
+					return nil, fmt.Errorf("migrate jwt key: %w", werr)
+				}
+				if string(key) != strings.TrimSpace(string(data)) {
+					return nil, fmt.Errorf("jwt key migration conflict: existing destination differs; legacy copy preserved")
+				}
+				if err := removeLegacyJWTKey(legacy); err != nil {
+					return nil, fmt.Errorf("remove legacy jwt key: %w", err)
+				}
+				log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
 			}
 		}
 	}
@@ -306,4 +332,13 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
+}
+
+// Another successful migration may already have removed the legacy copy.
+func removeLegacyJWTKey(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
