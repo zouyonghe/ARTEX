@@ -12,6 +12,7 @@ import {
   CopyIcon,
   CheckIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   AlertDialog,
@@ -229,7 +230,9 @@ export default function LLMRecordsPage() {
         setPage(0);
         setReloadTick((t) => t + 1);
       })
-      .catch(() => {})
+      .catch((error: unknown) => {
+        toast.error(`删除失败：${error instanceof Error ? error.message : "未知错误"}`);
+      })
       .finally(() => setDeleting(false));
   };
 
