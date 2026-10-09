@@ -97,7 +97,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 			}
 			key := strings.TrimSpace(string(data))
 			if len(key) < 32 {
-				return nil, fmt.Errorf("concurrently created jwt key is invalid (not replaced)")
+				return nil, fmt.Errorf("existing jwt key is invalid (not replaced); restore a trusted key before restarting")
 			}
 			return []byte(key), nil
 		}
