@@ -284,12 +284,12 @@ server {
 
 ## 系统技术架构
 
+ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ PostgreSQL，agent 能力由 [`norma`](https://github.com/Autumn-27/norma) SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
+
 ### MCP 重定向安全
 
 MCP HTTP 与 legacy SSE 的 HTTP 重定向也只允许原始请求同 origin，沿用 Go 默认在第 10 次跳转拒绝的上限；跨 origin
 重定向会直接失败，不转发配置的自定义认证头。使用跨 origin 跳转的部署应改为同源反向代理。
-
-ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端（内嵌 Next.js 前端）+ PostgreSQL，agent 能力由 [`norma`](https://github.com/Autumn-27/norma) SDK 提供（`agentcore` / `tool` / `permission` / `harness` / `memory` / `transcript`）。核心是**双图架构**，以及围绕它的两条自主性机制：**worker 间过程级信息交换**与 **planner 多轮共享 todolist 稳定攻击链路**。
 
 ### 总体分层
 

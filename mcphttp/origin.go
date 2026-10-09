@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 // sameMCPOrigin compares addresses without DNS lookup. IPv6 zones name local
@@ -24,8 +26,15 @@ func sameMCPOrigin(a, b *url.URL) bool {
 		if ipA != ipB {
 			return false
 		}
-	} else if strings.ContainsAny(hostA+hostB, ":%") || !strings.EqualFold(hostA, hostB) {
-		return false
+	} else {
+		if strings.ContainsAny(hostA+hostB, ":%") {
+			return false
+		}
+		dnsA, errA := idna.Lookup.ToASCII(hostA)
+		dnsB, errB := idna.Lookup.ToASCII(hostB)
+		if errA != nil || errB != nil || !strings.EqualFold(dnsA, dnsB) {
+			return false
+		}
 	}
 	port := func(u *url.URL) int {
 		if raw := u.Port(); raw != "" {
