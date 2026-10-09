@@ -261,6 +261,10 @@ func redactURLsInText(s string) string {
 				i = end + 1
 				continue
 			}
+			// Truncated quoted errors may still contain relative credential URLs.
+			b.WriteByte(s[i])
+			b.WriteString("(已隐藏)")
+			break
 		}
 		if strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://") {
 			end := len(rest)

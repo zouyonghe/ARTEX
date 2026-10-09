@@ -57,3 +57,17 @@ func TestRedactURLsInTextEscapedQuotes(t *testing.T) {
 		t.Fatalf("expected trailing diagnostic preserved, got %q", got)
 	}
 }
+
+func TestRedactURLsInTextUnclosedRelativeTarget(t *testing.T) {
+	for _, input := range []string{
+		`redirect failed: "/hook?token=` + leakProbeToken,
+		`redirect failed: '/hook?token=` + leakProbeToken,
+		`redirect failed: "/hook?x=\"&token=` + leakProbeToken,
+	} {
+		got := redactURLsInText(input)
+		assertNoSecret(t, got, leakProbeToken)
+		if !strings.Contains(got, "redirect failed") {
+			t.Fatal("error category lost")
+		}
+	}
+}
