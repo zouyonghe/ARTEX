@@ -78,3 +78,34 @@ func TestJWTLegacyRemovalIsIdempotent(t *testing.T) {
 		t.Fatal("removal failure changed legacy contents")
 	}
 }
+
+func TestJWTKeyExistingDestinationConflictPreservesBothFiles(t *testing.T) {
+	keyDir, dataDir := t.TempDir(), t.TempDir()
+	target := filepath.Join(keyDir, jwtKeyFilename)
+	legacy := filepath.Join(dataDir, jwtKeyFilename)
+	const targetKey = "target-fixture-material-0123456789"
+	const legacyKey = "legacy-fixture-material-0123456789"
+	if err := os.WriteFile(target, []byte(targetKey), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte(legacyKey), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err := loadOrCreateJWTKey(keyDir, dataDir)
+	if key != nil || err == nil || !strings.Contains(err.Error(), "conflict") {
+		t.Fatal("existing conflicting destination was silently selected")
+	}
+	for path, want := range map[string]string{target: targetKey, legacy: legacyKey} {
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != want {
+			t.Fatal("conflict changed one of the key files")
+		}
+	}
+	if err := os.WriteFile(legacy, []byte(targetKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err = loadOrCreateJWTKey(keyDir, dataDir)
+	if err != nil || string(key) != targetKey {
+		t.Fatal("matching existing key copies were not accepted")
+	}
+}

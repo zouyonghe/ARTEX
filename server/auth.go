@@ -56,6 +56,21 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	path := filepath.Join(keyDir, jwtKeyFilename)
 	// one-time migration out of the old in-workspace location.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {
+		if _, err := os.Stat(path); err == nil {
+			old, readErr := os.ReadFile(legacy)
+			if readErr != nil && !os.IsNotExist(readErr) {
+				return nil, fmt.Errorf("read legacy jwt key: %w", readErr)
+			}
+			if readErr == nil {
+				current, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return nil, fmt.Errorf("read destination jwt key: %w", readErr)
+				}
+				if strings.TrimSpace(string(current)) != strings.TrimSpace(string(old)) {
+					return nil, fmt.Errorf("jwt key migration conflict: existing destination differs; both copies preserved")
+				}
+			}
+		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			data, rerr := os.ReadFile(legacy)
 			if rerr != nil && !os.IsNotExist(rerr) {
