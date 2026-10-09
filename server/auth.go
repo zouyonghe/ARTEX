@@ -65,7 +65,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 				if werr := os.WriteFile(path, data, 0o600); werr != nil {
 					return nil, fmt.Errorf("migrate jwt key: %w", werr)
 				}
-				if err := os.Remove(legacy); err != nil {
+				if err := removeLegacyJWTKey(legacy); err != nil {
 					return nil, fmt.Errorf("remove legacy jwt key: %w", err)
 				}
 				log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
@@ -302,4 +302,13 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
+}
+
+// Another successful migration may already have removed the legacy copy.
+func removeLegacyJWTKey(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

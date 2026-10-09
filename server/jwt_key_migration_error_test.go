@@ -47,3 +47,30 @@ func TestJWTKeyMigrationWriteErrorKeepsLegacy(t *testing.T) {
 		t.Fatal("legacy key changed after write failure")
 	}
 }
+
+func TestJWTLegacyRemovalIsIdempotent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), jwtKeyFilename)
+	if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeLegacyJWTKey(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeLegacyJWTKey(path); err != nil {
+		t.Fatal("already removed legacy copy must not fail migration")
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contents := filepath.Join(path, "fixture")
+	if err := os.WriteFile(contents, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var pathErr *os.PathError
+	if err := removeLegacyJWTKey(path); !errors.As(err, &pathErr) {
+		t.Fatal("other removal errors must remain failures with their cause")
+	}
+	if _, err := os.Stat(contents); err != nil {
+		t.Fatal("removal failure changed legacy contents")
+	}
+}
