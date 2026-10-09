@@ -143,10 +143,7 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 	resp, err := hc.Do(req)
 	if err != nil {
 		cancel()
-		if errors.Is(err, errMCPRedirect) {
-			return nil, errMCPRedirect
-		}
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
@@ -470,10 +467,7 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		if errors.Is(err, errMCPRedirect) {
-			return nil, errMCPRedirect
-		}
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	defer resp.Body.Close()
 
@@ -537,10 +531,7 @@ func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectRes
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		if errors.Is(err, errMCPRedirect) {
-			return nil, errMCPRedirect
-		}
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

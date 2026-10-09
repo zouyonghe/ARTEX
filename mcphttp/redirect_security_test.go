@@ -154,3 +154,56 @@ func TestLegacyMessageRedirectDoesNotLeak(t *testing.T) {
 		t.Fatalf("legacy message redirect not safely rejected: %v", err)
 	}
 }
+
+func TestMalformedMCPRedirectDoesNotEchoCredentials(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{true: "SSE", false: "HTTP"}[legacy], func(t *testing.T) {
+			var emitted atomic.Bool
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				emitted.Store(true)
+				w.Header().Set("Location", "/%zz?token=malformed-fixture-secret")
+				w.WriteHeader(http.StatusTemporaryRedirect)
+			}))
+			defer origin.Close()
+			constructor := New
+			if legacy {
+				constructor = NewSSE
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			client, err := constructor(ctx, "fixture", origin.URL, nil, false)
+			if client != nil {
+				client.Close()
+			}
+			if !emitted.Load() || err == nil || strings.Contains(err.Error(), "malformed-fixture-secret") {
+				t.Fatalf("malformed redirect was not safely rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestMalformedLegacyMessageRedirectDoesNotEchoCredentials(t *testing.T) {
+	var emitted atomic.Bool
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sse" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte("event: endpoint\ndata: /message\n\n"))
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		emitted.Store(true)
+		w.Header().Set("Location", "/%zz?token=legacy-malformed-secret")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := NewSSE(ctx, "fixture", origin.URL+"/sse", nil, false)
+	if client != nil {
+		client.Close()
+	}
+	if !emitted.Load() || err == nil || strings.Contains(err.Error(), "legacy-malformed-secret") {
+		t.Fatalf("malformed legacy POST redirect was not safely rejected: %v", err)
+	}
+}

@@ -314,6 +314,7 @@ ARTEX 是一套 **LLM 多 agent 驱动的自主渗透系统**：Go 单体后端�
 
 MCP HTTP 与 legacy SSE 的 HTTP 重定向也只允许原始请求同 origin，沿用 Go 默认在第 10 次跳转拒绝的上限；跨 origin
 重定向会直接失败，不转发配置的自定义认证头。使用跨 origin 跳转的部署应改为同源反向代理。
+HTTP 传输错误只显示安全概述，不回显请求或 Location URL 的细节；错误类型和原因仍可通过 `errors.Is/As` 检查。
 
 ### 总体分层
 
