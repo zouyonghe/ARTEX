@@ -197,27 +197,16 @@ func readSSEEndpoint(r *bufio.Reader, base string) (string, error) {
 		if err != nil {
 			return "", errors.New("mcp sse endpoint URL is invalid")
 		}
+		if u.User != nil {
+			return "", errors.New("mcp sse endpoint must not supply userinfo")
+		}
 		b, err := url.Parse(base)
 		if err != nil {
 			return "", err
 		}
 		u = b.ResolveReference(u)
-		// The server-provided endpoint must not redirect configured credentials
-		// to a different origin. Default ports are equivalent to explicit ones.
-		port := func(v *url.URL) string {
-			if p := v.Port(); p != "" {
-				return p
-			}
-			if strings.EqualFold(v.Scheme, "https") {
-				return "443"
-			}
-			return "80"
-		}
-		if (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) ||
-			u.Hostname() == "" || u.User != nil ||
-			!strings.EqualFold(u.Scheme, b.Scheme) ||
-			!strings.EqualFold(u.Hostname(), b.Hostname()) || port(u) != port(b) {
-			return "", errors.New("mcp sse endpoint must use the configured HTTP(S) origin without userinfo")
+		if !sameMCPOrigin(u, b) {
+			return "", errors.New("mcp sse endpoint must use the configured HTTP(S) origin")
 		}
 		return u.String(), nil
 	}
