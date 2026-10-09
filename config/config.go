@@ -184,6 +184,10 @@ func Redact(dsn string) string {
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Host == "" {
 		return "(DSN hidden)"
 	}
+	// A malformed password delimiter can make the parser treat it as a port/path.
+	if u.User == nil && strings.Contains(dsn, "@") {
+		return "(DSN hidden)"
+	}
 	// Query parameters can contain passwords or other connection credentials.
 	u.RawQuery, u.Fragment, u.RawFragment = "", "", ""
 	u.ForceQuery = false

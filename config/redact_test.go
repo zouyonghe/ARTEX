@@ -15,6 +15,8 @@ func TestRedactDSNDoesNotExposePassword(t *testing.T) {
 		"postgres://user:" + secret + "@db.example/%zz",
 		"postgres://user:fixture@db.example/app?sslpassword=" + secret + "&sslmode=require",
 		"mysql://user:" + secret + "@db.example/app",
+		"postgres://user:1234/" + secret + "@db.example/app",
+		"postgres://user:1234#" + secret + "@db.example/app",
 	} {
 		t.Run(dsn, func(t *testing.T) {
 			if got := Redact(dsn); strings.Contains(got, secret) {
