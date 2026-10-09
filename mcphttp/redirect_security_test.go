@@ -2,6 +2,7 @@ package mcphttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,8 +16,9 @@ func TestMCPRedirectDoesNotForwardCustomCredentials(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
 			t.Run(http.StatusText(status)+map[bool]string{true: " SSE", false: " HTTP"}[legacy], func(t *testing.T) {
-				var received atomic.Bool
+				var received, visited, redirected atomic.Bool
 				target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					visited.Store(true)
 					if r.Header.Get("X-API-Key") == "redirect-fixture-secret" {
 						received.Store(true)
 					}
@@ -24,6 +26,7 @@ func TestMCPRedirectDoesNotForwardCustomCredentials(t *testing.T) {
 				}))
 				defer target.Close()
 				origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					redirected.Store(true)
 					http.Redirect(w, r, target.URL+"/message?token=redirect-fixture-secret", status)
 				}))
 				defer origin.Close()
@@ -37,8 +40,11 @@ func TestMCPRedirectDoesNotForwardCustomCredentials(t *testing.T) {
 				if client != nil {
 					client.Close()
 				}
-				if err == nil {
-					t.Fatal("redirected initialization should fail")
+				if !redirected.Load() || !errors.Is(err, errMCPRedirect) {
+					t.Fatal("initialization did not reach and reject the origin redirect")
+				}
+				if visited.Load() {
+					t.Fatal("redirect destination was visited, even if credentials were stripped")
 				}
 				if received.Load() {
 					t.Fatal("custom credential reached another origin through redirect")
@@ -120,7 +126,7 @@ func TestMCPRedirectSameOriginHandshake(t *testing.T) {
 }
 
 func TestLegacyMessageRedirectDoesNotLeak(t *testing.T) {
-	var reached atomic.Bool
+	var reached, redirected atomic.Bool
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		reached.Store(true)
 		w.WriteHeader(http.StatusBadRequest)
@@ -134,6 +140,7 @@ func TestLegacyMessageRedirectDoesNotLeak(t *testing.T) {
 			<-r.Context().Done()
 			return
 		}
+		redirected.Store(true)
 		http.Redirect(w, r, target.URL+"/message?token=legacy-secret", http.StatusTemporaryRedirect)
 	}))
 	defer origin.Close()
@@ -143,7 +150,7 @@ func TestLegacyMessageRedirectDoesNotLeak(t *testing.T) {
 	if client != nil {
 		client.Close()
 	}
-	if err == nil || reached.Load() || strings.Contains(err.Error(), "legacy-secret") {
+	if !redirected.Load() || !errors.Is(err, errMCPRedirect) || reached.Load() || strings.Contains(err.Error(), "legacy-secret") {
 		t.Fatalf("legacy message redirect not safely rejected: %v", err)
 	}
 }
