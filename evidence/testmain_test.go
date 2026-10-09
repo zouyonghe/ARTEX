@@ -1,7 +1,7 @@
 package evidence
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -9,10 +9,9 @@ import (
 	"github.com/Autumn-27/artex/internal/testenv"
 )
 
-// Initialize an explicitly configured fresh database before taking the same
-// suite lock as db, agent and server. Hold it on one pinned connection.
+// Initialize the explicit test database while holding the shared suite lock.
 func TestMain(m *testing.M) {
-	os.Exit(testenv.Run(func() int { return runEvidenceSuite(m) }))
+	os.Exit(testenv.RunPG(func() int { return runEvidenceSuite(m) }))
 }
 
 func runEvidenceSuite(m *testing.M) int {
@@ -21,17 +20,9 @@ func runEvidenceSuite(m *testing.M) int {
 	}
 	pg, err := db.Open(os.Getenv("ARTEX_PG_DSN"))
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, "evidence: cannot initialize explicit test database")
+		return 1
 	}
 	defer pg.Close()
-	conn, err := pg.Conn(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	if _, err = conn.ExecContext(context.Background(), `SELECT pg_advisory_lock(7337741002)`); err != nil {
-		panic(err)
-	}
-	defer conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(7337741002)`)
 	return m.Run()
 }

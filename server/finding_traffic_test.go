@@ -22,7 +22,7 @@ import (
 
 func trafficEvidenceServer(t *testing.T) (*Server, *db.RecordedFinding, func(string, string, string) *httptest.ResponseRecorder) {
 	t.Helper()
-	if os.Getenv("ARTEX_PG_DSN") == "" {
+	if strings.TrimSpace(os.Getenv("ARTEX_TEST_PG_DSN")) == "" {
 		t.Skip("ARTEX_TEST_PG_DSN is required for evidence API integration tests")
 	}
 	m, err := NewManager(t.TempDir(), "")
