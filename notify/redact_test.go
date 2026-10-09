@@ -172,6 +172,46 @@ func TestRedactTransportErrorStripsURL(t *testing.T) {
 	}
 }
 
+func TestChannelRedirectParseErrorNeverLeaksCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "/%zz?access_token="+leakProbeToken)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	_, err := (dingTalkChannel{}).Send(context.Background(),
+		map[string]any{"webhook": srv.URL + "/robot/send"},
+		Message{Items: []Item{{Severity: "high"}}})
+	if err == nil {
+		t.Fatal("invalid redirect target should fail")
+	}
+	assertNoSecret(t, err.Error(), leakProbeToken)
+	if !strings.Contains(err.Error(), "invalid URL escape") {
+		t.Fatalf("expected redirect parsing error, got %v", err)
+	}
+}
+
+func TestRedactTransportErrorStripsNestedURLs(t *testing.T) {
+	for _, target := range []string{
+		"https://proxy.example/hook?token=" + leakProbeToken,
+		"https://proxy.example/bot" + leakProbeToken + "/send",
+		"https://user:" + leakProbeToken + "@proxy.example/hook",
+	} {
+		err := &url.Error{
+			Op:  "Post",
+			URL: "https://api.example/hook",
+			Err: fmt.Errorf("proxy failed: %w", &url.Error{Op: "Get", URL: target, Err: errors.New("connection refused")}),
+		}
+		got := redactTransportError(err)
+		assertNoSecret(t, got, leakProbeToken)
+		for _, want := range []string{"Post", "api.example", "proxy.example", "connection refused"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("expected diagnostic %q in %q", want, got)
+			}
+		}
+	}
+}
+
 // TestRedactURLsInTextHandlesFallback 兜底路径：非 *url.Error 的自定义错误
 // （如重定向策略返回的错误）里的地址同样要被摘掉。
 func TestRedactURLsInTextHandlesFallback(t *testing.T) {
