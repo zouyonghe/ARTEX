@@ -65,8 +65,16 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 			}
 		}
 	}
-	if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) >= 32 {
-		return []byte(strings.TrimSpace(string(data))), nil
+	data, err := os.ReadFile(path)
+	if err == nil {
+		key := strings.TrimSpace(string(data))
+		if len(key) < 32 {
+			return nil, fmt.Errorf("existing jwt key is invalid: %s (not replaced)", path)
+		}
+		return []byte(key), nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read jwt key: %w", err)
 	}
 	buf := make([]byte, 32)
 	for i := range buf {
