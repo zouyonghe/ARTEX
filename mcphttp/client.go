@@ -101,7 +101,7 @@ func New(ctx context.Context, server, url string, headers map[string]string, ins
 	if err != nil {
 		return nil, err
 	}
-	hc := &http.Client{Timeout: 120 * time.Second}
+	hc := &http.Client{Timeout: 120 * time.Second, CheckRedirect: checkMCPRedirect}
 	if insecure {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
@@ -126,7 +126,7 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 	if err != nil {
 		return nil, err
 	}
-	hc := &http.Client{} // the SSE stream is intentionally long-lived.
+	hc := &http.Client{CheckRedirect: checkMCPRedirect} // the SSE stream is intentionally long-lived.
 	if insecure {
 		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	}
@@ -143,6 +143,9 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 	resp, err := hc.Do(req)
 	if err != nil {
 		cancel()
+		if errors.Is(err, errMCPRedirect) {
+			return nil, errMCPRedirect
+		}
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -177,6 +180,34 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 		return nil, err
 	}
 	return c, nil
+}
+
+var errMCPRedirect = errors.New("mcp redirect rejected: stay within the original HTTP(S) origin and redirect limit")
+
+func checkMCPRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errMCPRedirect
+	}
+	if len(via) == 0 {
+		return errMCPRedirect
+	}
+	origin := via[0].URL
+	port := func(u *url.URL) string {
+		if p := u.Port(); p != "" {
+			return p
+		}
+		if strings.EqualFold(u.Scheme, "https") {
+			return "443"
+		}
+		return "80"
+	}
+	if req.URL.User != nil ||
+		(!strings.EqualFold(req.URL.Scheme, "http") && !strings.EqualFold(req.URL.Scheme, "https")) ||
+		!strings.EqualFold(req.URL.Scheme, origin.Scheme) ||
+		!strings.EqualFold(req.URL.Hostname(), origin.Hostname()) || port(req.URL) != port(origin) {
+		return errMCPRedirect
+	}
+	return nil
 }
 
 func readSSEEndpoint(r *bufio.Reader, base string) (string, error) {
@@ -447,6 +478,9 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if errors.Is(err, errMCPRedirect) {
+			return nil, errMCPRedirect
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -511,6 +545,9 @@ func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectRes
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if errors.Is(err, errMCPRedirect) {
+			return nil, errMCPRedirect
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()

@@ -99,6 +99,8 @@ docker compose up -d          # 拉取 autumn27/artex 镜像 + postgres
 旧版 SSE 服务通常使用 `GET /sse` 建立事件流，再通过服务返回的
 `/message?sessionId=...` 接收 JSON-RPC 请求；配置时将 URL 填为 `/sse`，请求头按
 `Authorization=Bearer <token>` 填写。
+MCP HTTP 与 legacy SSE 的 HTTP 重定向也只允许原始请求同 origin，沿用 Go 默认在第 10 次跳转拒绝的上限；跨 origin
+重定向会直接失败，不转发配置的自定义认证头。使用跨 origin 跳转的部署应改为同源反向代理。
 
 ### 方式三：下载预编译二进制（Releases）
 
