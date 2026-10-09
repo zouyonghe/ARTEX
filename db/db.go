@@ -136,7 +136,7 @@ func Open(dsn string) (*DB, error) {
 	}
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, err
+		return nil, redactPostgresConfigError(err)
 	}
 	// database/sql 默认不限制连接数：池里没有空闲连接时会无条件新建，一路顶到
 	// PostgreSQL 的 max_connections（默认 100）才被拒，于是高峰期的查询拿到的是
@@ -150,7 +150,7 @@ func Open(dsn string) (*DB, error) {
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	if err := sqlDB.Ping(); err != nil {
 		sqlDB.Close()
-		return nil, fmt.Errorf("ping postgres (%s): %w", config.Redact(dsn), err)
+		return nil, fmt.Errorf("ping postgres: %w", redactPostgresConfigError(err))
 	}
 	d := &DB{sqlDB}
 	// pgx runs multi-statement Exec via the simple protocol when there are no args.
@@ -170,6 +170,23 @@ func Open(dsn string) (*DB, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// pgx's parser error may echo credentials from malformed URLs or query fields.
+// Preserve the error chain for classification without formatting its raw DSN.
+type redactedPostgresConfigError struct{ cause error }
+
+func (e redactedPostgresConfigError) Error() string {
+	return "invalid PostgreSQL connection configuration"
+}
+func (e redactedPostgresConfigError) Unwrap() error { return e.cause }
+
+func redactPostgresConfigError(err error) error {
+	var parseErr *pgconn.ParseConfigError
+	if errors.As(err, &parseErr) {
+		return redactedPostgresConfigError{cause: err}
+	}
+	return err
 }
 
 // builtinAgent describes one of the fixed agents and its prompt-variable catalog.
