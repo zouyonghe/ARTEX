@@ -57,11 +57,18 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	// one-time migration out of the old in-workspace location.
 	if legacy := filepath.Join(dataDir, jwtKeyFilename); legacy != path {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if data, rerr := os.ReadFile(legacy); rerr == nil {
-				if werr := os.WriteFile(path, data, 0o600); werr == nil {
-					_ = os.Remove(legacy)
-					log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
+			data, rerr := os.ReadFile(legacy)
+			if rerr != nil && !os.IsNotExist(rerr) {
+				return nil, fmt.Errorf("read legacy jwt key: %w", rerr)
+			}
+			if rerr == nil {
+				if werr := os.WriteFile(path, data, 0o600); werr != nil {
+					return nil, fmt.Errorf("migrate jwt key: %w", werr)
 				}
+				if err := os.Remove(legacy); err != nil {
+					return nil, fmt.Errorf("remove legacy jwt key: %w", err)
+				}
+				log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
 			}
 		}
 	}
