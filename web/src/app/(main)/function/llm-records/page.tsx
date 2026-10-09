@@ -130,6 +130,7 @@ export default function LLMRecordsPage() {
   const [records, setRecords] = React.useState<LLMRecordItem[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
+  const [listError, setListError] = React.useState("");
 
   // Recording on/off toggle (settings.llm_record; default off). When off the
   // backend records nothing.
@@ -201,6 +202,11 @@ export default function LLMRecordsPage() {
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
+    setListError("");
+    setRecords([]);
+    setTotal(0);
+    setSelected(null);
+    setDetail(null);
     api
       .llmRecords({ model: model || undefined, session: sessionQ || undefined, task: pickedTask || undefined, page, size })
       .then((r) => {
@@ -208,7 +214,9 @@ export default function LLMRecordsPage() {
         setRecords(r.records ?? []);
         setTotal(r.total ?? 0);
       })
-      .catch(() => {})
+      .catch((error: unknown) => {
+        if (alive) setListError(error instanceof Error ? error.message : "加载 LLM 调用记录失败");
+      })
       .finally(() => alive && setLoading(false));
     api
       .llmTasks()
@@ -255,7 +263,7 @@ export default function LLMRecordsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const rangeStart = total === 0 ? 0 : page * size + 1;
-  const rangeEnd = page * size + records.length;
+  const rangeEnd = total === 0 ? 0 : page * size + records.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -356,19 +364,19 @@ export default function LLMRecordsPage() {
             variant="outline"
             size="icon"
             className="size-8"
-            disabled={page <= 0}
+            disabled={loading || !!listError || page <= 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
             <ChevronLeftIcon />
           </Button>
           <span className="tabular-nums">
-            {page + 1} / {totalPages}
+            {loading || listError ? "—" : `${page + 1} / ${totalPages}`}
           </span>
           <Button
             variant="outline"
             size="icon"
             className="size-8"
-            disabled={page + 1 >= totalPages}
+            disabled={loading || !!listError || page + 1 >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
           >
             <ChevronRightIcon />
@@ -377,6 +385,14 @@ export default function LLMRecordsPage() {
       </div>
 
       {/* History table + inline detail (Burp-style split) */}
+      {listError && (
+        <div role="alert" className="flex items-center gap-3 text-destructive text-sm">
+          <span>加载失败：{listError}</span>
+          <Button variant="outline" size="sm" onClick={() => setReloadTick((tick) => tick + 1)}>
+            重试
+          </Button>
+        </div>
+      )}
       <div className="flex h-[calc(100vh-13rem)] min-h-0 flex-col gap-3">
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
           <div className="min-h-0 flex-1 overflow-auto">
@@ -403,7 +419,7 @@ export default function LLMRecordsPage() {
                 ) : records.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
-                      暂无 LLM 调用记录
+                      {listError ? "记录加载失败，请重试" : "暂无 LLM 调用记录"}
                     </TableCell>
                   </TableRow>
                 ) : (
