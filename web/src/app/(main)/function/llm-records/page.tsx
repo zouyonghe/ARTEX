@@ -204,6 +204,8 @@ export default function LLMRecordsPage() {
     setListError("");
     setRecords([]);
     setTotal(0);
+    setSelected(null);
+    setDetail(null);
     api
       .llmRecords({ model: model || undefined, session: sessionQ || undefined, task: pickedTask || undefined, page, size })
       .then((r) => {
@@ -359,19 +361,19 @@ export default function LLMRecordsPage() {
             variant="outline"
             size="icon"
             className="size-8"
-            disabled={page <= 0}
+            disabled={loading || !!listError || page <= 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
             <ChevronLeftIcon />
           </Button>
           <span className="tabular-nums">
-            {page + 1} / {totalPages}
+            {loading || listError ? "—" : `${page + 1} / ${totalPages}`}
           </span>
           <Button
             variant="outline"
             size="icon"
             className="size-8"
-            disabled={page + 1 >= totalPages}
+            disabled={loading || !!listError || page + 1 >= totalPages}
             onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
           >
             <ChevronRightIcon />
