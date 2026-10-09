@@ -285,7 +285,7 @@ server {
 需要集成验证时，仅通过 `ARTEX_TEST_PG_DSN` 指向**专用、可丢弃的测试数据库**：
 
 ```bash
-ARTEX_TEST_PG_DSN='postgres://test_user:fixture@127.0.0.1:5432/artex_test?sslmode=disable' go test ./...
+ARTEX_TEST_PG_DSN='postgres://test_user:fixture@127.0.0.1:5432/artex_test?sslmode=disable' go test -p 1 ./...
 ```
 
 测试会初始化 schema、写入种子和测试数据，并执行删除/清理；不要使用开发或生产数据库，
@@ -293,6 +293,8 @@ ARTEX_TEST_PG_DSN='postgres://test_user:fixture@127.0.0.1:5432/artex_test?sslmod
 测试变量，正常启动程序的配置方式不变。包间 advisory lock 只协调测试并发，不提供数据隔离。
 显式设置测试 DSN 后，连接、锁获取或锁释放失败会让套件失败，不会以跳过集成测试的方式通过。
 共享套件锁固定在同一 PostgreSQL session，等待连接/锁的 setup 上限为 30 秒。
+显式 PG 验证使用 `-p 1` 顺序运行包，避免长套件使同一运行中的其他包等待共享锁超时；
+独立测试进程仍需协调，锁超时会失败而不跳过。未启用 PG 的纯单元检查不要求串行。
 
 `ARTEX_REVIEW_LIVE_CONFIG` 是独立的真实模型测试开关，可能请求外部或计费服务；
 未设置测试 DB 不等于禁止外网。只跑受控本地测试时也应确保未设置该开关及真实模型凭据。

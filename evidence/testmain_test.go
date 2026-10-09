@@ -20,7 +20,7 @@ func runEvidenceSuite(m *testing.M) int {
 	}
 	pg, err := db.Open(os.Getenv("ARTEX_PG_DSN"))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "evidence: cannot initialize explicit test database")
+		fmt.Fprintf(os.Stderr, "evidence: cannot initialize explicit test database (error type %T)\n", err)
 		return 1
 	}
 	defer pg.Close()

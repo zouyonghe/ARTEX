@@ -12,23 +12,31 @@ import (
 // A standard-library fake driver exercises setup and session lifetime without PG.
 type suiteConnector struct{ conn *suiteConn }
 
-func (c suiteConnector) Connect(context.Context) (driver.Conn, error) { return c.conn, nil }
-func (c suiteConnector) Driver() driver.Driver                        { return suiteDriver{} }
+func (c suiteConnector) Connect(context.Context) (driver.Conn, error) {
+	if c.conn.connectErr != nil {
+		return nil, c.conn.connectErr
+	}
+	return c.conn, nil
+}
+func (c suiteConnector) Driver() driver.Driver { return suiteDriver{} }
 
 type suiteDriver struct{}
 
 func (suiteDriver) Open(string) (driver.Conn, error) { return nil, errors.New("unused") }
 
 type suiteConn struct {
-	pingErr, lockErr, unlockErr error
-	locked, unlocked, closed    bool
+	connectErr, pingErr, lockErr, unlockErr error
+	locked, unlocked, closed                bool
 }
 
 func (c *suiteConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("unused") }
 func (c *suiteConn) Begin() (driver.Tx, error)           { return nil, errors.New("unused") }
 func (c *suiteConn) Close() error                        { c.closed = true; return nil }
 func (c *suiteConn) Ping(context.Context) error          { return c.pingErr }
-func (c *suiteConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+func (c *suiteConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if len(args) != 1 || args[0].Value != pgSuiteLockKey {
+		return nil, errors.New("unexpected suite lock key")
+	}
 	if strings.Contains(query, "pg_advisory_unlock") {
 		c.unlocked = true
 		c.locked = false
@@ -42,11 +50,13 @@ func (c *suiteConn) ExecContext(_ context.Context, query string, _ []driver.Name
 }
 
 func TestPostgresSuiteFailsClosedAndPinsLock(t *testing.T) {
-	for _, phase := range []string{"success", "ping", "lock", "unlock"} {
+	for _, phase := range []string{"success", "connect", "ping", "lock", "unlock"} {
 		t.Run(phase, func(t *testing.T) {
 			conn := &suiteConn{}
 			failure := errors.New("fixture failure")
 			switch phase {
+			case "connect":
+				conn.connectErr = failure
 			case "ping":
 				conn.pingErr = failure
 			case "lock":
