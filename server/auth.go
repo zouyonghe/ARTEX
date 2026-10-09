@@ -62,8 +62,12 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 				return nil, fmt.Errorf("read legacy jwt key: %w", rerr)
 			}
 			if rerr == nil {
-				if werr := os.WriteFile(path, data, 0o600); werr != nil {
+				key, _, werr := publishJWTKey(path, data)
+				if werr != nil {
 					return nil, fmt.Errorf("migrate jwt key: %w", werr)
+				}
+				if string(key) != strings.TrimSpace(string(data)) {
+					return nil, fmt.Errorf("jwt key migration conflict: existing destination differs; legacy copy preserved")
 				}
 				if err := removeLegacyJWTKey(legacy); err != nil {
 					return nil, fmt.Errorf("remove legacy jwt key: %w", err)

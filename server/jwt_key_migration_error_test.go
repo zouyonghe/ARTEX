@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,8 +40,11 @@ func TestJWTKeyMigrationWriteErrorKeepsLegacy(t *testing.T) {
 	}
 	_, err := loadOrCreateJWTKey(keyDir, dataDir)
 	var pathErr *os.PathError
-	if !errors.As(err, &pathErr) || pathErr.Path != filepath.Join(keyDir, jwtKeyFilename) {
+	if !errors.As(err, &pathErr) || (pathErr.Path != keyDir && !strings.HasPrefix(pathErr.Path, keyDir+string(filepath.Separator))) {
 		t.Fatalf("migration write cause not preserved: %v", err)
+	}
+	if !strings.Contains(err.Error(), "migrate jwt key:") {
+		t.Fatal("write error must identify migration, not a later replacement-key attempt")
 	}
 	got, err := os.ReadFile(legacy)
 	if err != nil || string(got) != contents {
