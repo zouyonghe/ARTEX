@@ -99,6 +99,10 @@ docker compose up -d          # 拉取 autumn27/artex 镜像 + postgres
 旧版 SSE 服务通常使用 `GET /sse` 建立事件流，再通过服务返回的
 `/message?sessionId=...` 接收 JSON-RPC 请求；配置时将 URL 填为 `/sse`，请求头按
 `Authorization=Bearer <token>` 填写。
+Legacy SSE 服务返回的 message endpoint 必须与配置的 SSE URL 同 origin（HTTP(S) 协议、主机及
+有效数值端口一致），公告不得自行指定 userinfo；相对路径可继承配置 URL 的认证信息。
+默认端口与显式 80/443 及其前导零表示等价，IPv6 地址按规范值比较，zone 名称区分大小写。
+跨 origin 的拆分部署请通过反向代理统一 origin；此校验仅限制公告端点，HTTP 重定向保护在独立 PR #13 中提供。
 
 ### 方式三：下载预编译二进制（Releases）
 
