@@ -150,7 +150,7 @@ func Open(dsn string) (*DB, error) {
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 	if err := sqlDB.Ping(); err != nil {
 		sqlDB.Close()
-		return nil, fmt.Errorf("ping postgres (%s): %w", config.Redact(dsn), redactPostgresConfigError(err))
+		return nil, fmt.Errorf("ping postgres: %w", redactPostgresConfigError(err))
 	}
 	d := &DB{sqlDB}
 	// pgx runs multi-statement Exec via the simple protocol when there are no args.
