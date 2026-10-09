@@ -17,6 +17,8 @@ web/next-env.d.ts
 *.local
 
 # development tools
+.runtime/
+/.agent-state/
 .playwright-mcp/
 .playwright-cli/
 .idea/
