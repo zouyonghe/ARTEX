@@ -76,8 +76,32 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 		}
 		buf[i] = keyChars[n.Int64()]
 	}
-	if err := os.WriteFile(path, buf, 0600); err != nil {
+	// Publish only complete key material without replacing another creator's key.
+	tmp, err := os.CreateTemp(keyDir, ".jwt-key-*")
+	if err != nil {
+		return nil, fmt.Errorf("create jwt key temporary file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(buf); err != nil {
+		tmp.Close()
 		return nil, fmt.Errorf("write jwt key: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close jwt key: %w", err)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil {
+		if os.IsExist(err) {
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil, fmt.Errorf("read concurrently created jwt key: %w", readErr)
+			}
+			key := strings.TrimSpace(string(data))
+			if len(key) < 32 {
+				return nil, fmt.Errorf("concurrently created jwt key is invalid (not replaced)")
+			}
+			return []byte(key), nil
+		}
+		return nil, fmt.Errorf("publish jwt key (filesystem must support hard links): %w", err)
 	}
 	log.Printf("[auth] 新 JWT key 已写入 %s", path)
 	return buf, nil
