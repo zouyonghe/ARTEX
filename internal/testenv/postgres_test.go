@@ -42,11 +42,24 @@ func (c *suiteConn) ExecContext(_ context.Context, query string, args []driver.N
 		c.locked = false
 		return driver.RowsAffected(1), c.unlockErr
 	}
+	if !strings.Contains(query, "pg_advisory_lock(") {
+		return nil, errors.New("expected a session advisory lock query")
+	}
 	if c.lockErr != nil {
 		return nil, c.lockErr
 	}
 	c.locked = true
 	return driver.RowsAffected(1), nil
+}
+
+func TestPostgresFakeRejectsMissingSessionLock(t *testing.T) {
+	for _, query := range []string{"SELECT 1", "SELECT pg_advisory_xact_lock($1)"} {
+		conn := &suiteConn{}
+		_, err := conn.ExecContext(context.Background(), query, []driver.NamedValue{{Ordinal: 1, Value: pgSuiteLockKey}})
+		if err == nil || conn.locked {
+			t.Fatal("fake accepted a query that does not hold the session advisory lock")
+		}
+	}
 }
 
 func TestPostgresSuiteFailsClosedAndPinsLock(t *testing.T) {
