@@ -55,6 +55,7 @@ func TestMCPRedirectOriginAndLimit(t *testing.T) {
 	original, _ := http.NewRequest(http.MethodGet, "https://trusted.example/sse", nil)
 	for _, target := range []string{
 		"https://TRUSTED.example:443/message",
+		"https://trusted.example:0443/message",
 		"https://trusted.example/another",
 	} {
 		req, _ := http.NewRequest(http.MethodGet, target, nil)
@@ -75,6 +76,19 @@ func TestMCPRedirectOriginAndLimit(t *testing.T) {
 	}
 	if err := checkMCPRedirect(original, make([]*http.Request, 10)); err == nil {
 		t.Fatal("10-hop limit not enforced")
+	}
+}
+
+func TestMCPRedirectIPv6ZoneIsCaseSensitive(t *testing.T) {
+	original, _ := http.NewRequest(http.MethodGet, "http://[fe80::1%25eth0]/sse", nil)
+	req, _ := http.NewRequest(http.MethodGet, "http://[fe80::1%25ETH0]/message", nil)
+	if checkMCPRedirect(req, []*http.Request{original}) == nil {
+		t.Fatal("redirect accepted a different interface zone")
+	}
+	original, _ = http.NewRequest(http.MethodGet, "http://[::1]/sse", nil)
+	req, _ = http.NewRequest(http.MethodGet, "http://[0:0:0:0:0:0:0:1]:080/message", nil)
+	if err := checkMCPRedirect(req, []*http.Request{original}); err != nil {
+		t.Fatal("equivalent IPv6 address and numeric default port rejected")
 	}
 }
 

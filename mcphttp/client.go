@@ -192,19 +192,7 @@ func checkMCPRedirect(req *http.Request, via []*http.Request) error {
 		return errMCPRedirect
 	}
 	origin := via[0].URL
-	port := func(u *url.URL) string {
-		if p := u.Port(); p != "" {
-			return p
-		}
-		if strings.EqualFold(u.Scheme, "https") {
-			return "443"
-		}
-		return "80"
-	}
-	if req.URL.User != nil ||
-		(!strings.EqualFold(req.URL.Scheme, "http") && !strings.EqualFold(req.URL.Scheme, "https")) ||
-		!strings.EqualFold(req.URL.Scheme, origin.Scheme) ||
-		!strings.EqualFold(req.URL.Hostname(), origin.Hostname()) || port(req.URL) != port(origin) {
+	if req.URL.User != nil || !sameMCPOrigin(req.URL, origin) {
 		return errMCPRedirect
 	}
 	return nil
