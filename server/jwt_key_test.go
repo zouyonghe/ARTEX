@@ -90,3 +90,25 @@ func TestJWTKeyLegacyMigrationPreservesContents(t *testing.T) {
 		})
 	}
 }
+
+func TestJWTKeyTrimmedLengthBoundary(t *testing.T) {
+	for _, size := range []int{31, 32} {
+		dir := t.TempDir()
+		contents := strings.Repeat("x", size) + "\n"
+		path := filepath.Join(dir, jwtKeyFilename)
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		key, err := loadOrCreateJWTKey(dir, dir)
+		if (err != nil) != (size < 32) {
+			t.Fatalf("trimmed length=%d: error=%v", size, err)
+		}
+		if size == 32 && string(key) != strings.TrimSpace(contents) {
+			t.Fatal("valid trimmed key was not reused")
+		}
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != contents {
+			t.Fatal("key file changed at trim boundary")
+		}
+	}
+}
