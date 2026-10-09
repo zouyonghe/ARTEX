@@ -134,7 +134,7 @@ func NewSSE(ctx context.Context, server, sseURL string, headers map[string]strin
 	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, sseURL, nil)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	for k, v := range cleanHeaders {
@@ -446,7 +446,7 @@ func (c *Client) roundTrip(ctx context.Context, body rpcRequest, expectResp bool
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -522,7 +522,7 @@ func (c *Client) legacyRoundTrip(ctx context.Context, body rpcRequest, expectRes
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.messageURL, bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return nil, safeMCPTransportError(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
