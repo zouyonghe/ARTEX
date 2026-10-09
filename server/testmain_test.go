@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Autumn-27/artex/db"
+	"github.com/Autumn-27/artex/internal/testenv"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -13,18 +14,25 @@ import (
 // server test suite so cross-package DELETE cleanup races with db/agent
 // packages are avoided when running `go test ./...`.
 func TestMain(m *testing.M) {
+	os.Exit(testenv.Run(func() int { return runServerSuite(m) }))
+}
+
+func runServerSuite(m *testing.M) int {
 	dsn, _, err := db.DSN()
 	if err != nil {
-		os.Exit(m.Run())
+		return m.Run()
 	}
 	conn, err := sql.Open("pgx", dsn)
-	if err != nil || conn.Ping() != nil {
-		os.Exit(m.Run())
+	if err != nil {
+		return m.Run()
 	}
 	defer conn.Close()
+	if conn.Ping() != nil {
+		return m.Run()
+	}
 	if _, err := conn.Exec(`SELECT pg_advisory_lock(7337741002)`); err != nil {
-		os.Exit(m.Run())
+		return m.Run()
 	}
 	defer conn.Exec(`SELECT pg_advisory_unlock(7337741002)`) //nolint:errcheck
-	os.Exit(m.Run())
+	return m.Run()
 }

@@ -280,6 +280,22 @@ server {
 - 测试：`go test ./...`
 - Mock 预览（无后端）：`cd web && NEXT_PUBLIC_MOCK=1 npm run dev`
 
+默认 Go 测试不会继承运行用的 `ARTEX_PG_DSN` 或 `config.json`：涉及 PostgreSQL
+的测试包会使用临时空配置，未显式启用时跳过 PG 集成测试，仍执行纯单元测试。
+需要集成验证时，仅通过 `ARTEX_TEST_PG_DSN` 指向**专用、可丢弃的测试数据库**：
+
+```bash
+ARTEX_TEST_PG_DSN='postgres://test_user:fixture@127.0.0.1:5432/artex_test?sslmode=disable' go test ./...
+```
+
+测试会初始化 schema、写入种子和测试数据，并执行删除/清理；不要使用开发或生产数据库，
+测试库也不应包含真实任务、通知账户或 LLM 配置。原来用运行变量启用集成测试的流程需改用
+测试变量，正常启动程序的配置方式不变。包间 advisory lock 只协调测试并发，不提供数据隔离。
+
+`ARTEX_REVIEW_LIVE_CONFIG` 是独立的真实模型测试开关，可能请求外部或计费服务；
+未设置测试 DB 不等于禁止外网。只跑受控本地测试时也应确保未设置该开关及真实模型凭据。
+测试环境隔离不是安全沙箱，新增 PG 测试须使用现有 TestMain 的共享隔离入口，不自行读取运行配置。
+
 ---
 
 ## 系统技术架构
