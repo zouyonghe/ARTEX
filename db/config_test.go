@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -61,6 +62,71 @@ func TestDeleteProfileContextHonorsCancellation(t *testing.T) {
 	var d DB
 	if err := d.DeleteProfileContext(ctx, 1); !errors.Is(err, context.Canceled) {
 		t.Fatalf("DeleteProfileContext error=%v, want context cancellation", err)
+	}
+}
+
+func TestSeedREAMCPIsIdempotentAndPreservesEdits(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	defer d.Close()
+
+	var original MCPServer
+	var originalArgs, originalEnv []byte
+	err = d.QueryRow(`SELECT id,name,transport,COALESCE(command,''),args,env,COALESCE(url,''),enabled,insecure FROM mcp_servers WHERE name='rea'`).
+		Scan(&original.ID, &original.Name, &original.Transport, &original.Command, &originalArgs, &originalEnv, &original.URL, &original.Enabled, &original.Insecure)
+	hadOriginal := err == nil
+	if err != nil && err != sql.ErrNoRows {
+		t.Fatal(err)
+	}
+	if !hadOriginal {
+		t.Fatal("Open did not seed the REA MCP row")
+	}
+	original.Args, original.Env = originalArgs, originalEnv
+	t.Cleanup(func() {
+		_, _ = d.Exec(`UPDATE mcp_servers SET transport=$1,command=$2,args=$3,env=$4,url=NULLIF($5,''),enabled=$6,insecure=$7 WHERE id=$8`,
+			original.Transport, original.Command, original.Args, original.Env, original.URL, original.Enabled, original.Insecure, original.ID)
+	})
+
+	if _, err := d.Exec(`UPDATE mcp_servers SET command='custom-rea', args='["custom"]', enabled=false WHERE id=$1`, original.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.seedBuiltins(); err != nil {
+		t.Fatal(err)
+	}
+	var command string
+	var args []byte
+	var enabled bool
+	if err := d.QueryRow(`SELECT command,args,enabled FROM mcp_servers WHERE name='rea'`).Scan(&command, &args, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	if command != "custom-rea" || string(args) != `["custom"]` || enabled {
+		t.Fatalf("existing REA MCP was overwritten: command %q args %s enabled %v", command, args, enabled)
+	}
+}
+
+func TestSeedBuiltinSkillVisibilityIncludesREA(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	defer d.Close()
+
+	if err := d.seedBuiltinSkillVisibility(); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"auto", "pentest", "worker"} {
+		var enabled bool
+		if err := d.QueryRow(`
+SELECT enabled FROM agent_skill_visibility v
+JOIN agents a ON a.id=v.agent_id
+WHERE a.key=$1 AND v.skill_name='reverse-engineer-anything'`, key).Scan(&enabled); err != nil {
+			t.Fatalf("REA Skill visibility for %s: %v", key, err)
+		}
+		if !enabled {
+			t.Fatalf("REA Skill visibility for %s is disabled", key)
+		}
 	}
 }
 
