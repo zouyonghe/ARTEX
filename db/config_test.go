@@ -64,6 +64,45 @@ func TestDeleteProfileContextHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestSeedREAMCPIsIdempotentAndPreservesEdits(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	defer d.Close()
+
+	if err := d.seedBuiltins(); err != nil {
+		t.Fatal(err)
+	}
+
+	var command string
+	var args []byte
+	var enabled bool
+	if err := d.QueryRow(`SELECT command,args,enabled FROM mcp_servers WHERE name='rea'`).Scan(&command, &args, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	originalCommand, originalArgs, originalEnabled := command, append([]byte(nil), args...), enabled
+	t.Cleanup(func() {
+		_, _ = d.Exec(`UPDATE mcp_servers SET command=$1,args=$2,enabled=$3 WHERE name='rea'`, originalCommand, originalArgs, originalEnabled)
+	})
+	if command != "npx" || string(args) != `["-y","rea-agents@6.4.0","mcp"]` || !enabled {
+		t.Fatalf("seeded REA MCP = command %q args %s enabled %v", command, args, enabled)
+	}
+
+	if _, err := d.Exec(`UPDATE mcp_servers SET command='custom-rea', args='["custom"]', enabled=false WHERE name='rea'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.seedBuiltins(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.QueryRow(`SELECT command,args,enabled FROM mcp_servers WHERE name='rea'`).Scan(&command, &args, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	if command != "custom-rea" || string(args) != `["custom"]` || enabled {
+		t.Fatalf("existing REA MCP was overwritten: command %q args %s enabled %v", command, args, enabled)
+	}
+}
+
 func TestConfigStores(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {

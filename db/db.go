@@ -281,6 +281,15 @@ ON CONFLICT (name) DO NOTHING`,
 		`["@playwright/mcp","--headless"]`); err != nil {
 		return fmt.Errorf("seed browser mcp: %w", err)
 	}
+	// Seed REA enabled by default so reverse-engineering tools are available
+	// through the existing MCP/Skill visibility flow. Never overwrite user edits.
+	if _, err := d.Exec(`
+INSERT INTO mcp_servers(name, transport, command, args, env, enabled)
+VALUES ('rea', 'stdio', 'npx', $1, '{}', true)
+ON CONFLICT (name) DO NOTHING`,
+		`["-y","rea-agents@6.4.0","mcp"]`); err != nil {
+		return fmt.Errorf("seed rea mcp: %w", err)
+	}
 	// NOTE: the placeholder ScopeSentry data-source MCP (empty URL + empty X-API-Key,
 	// disabled) is seeded directly in schema.sql §F so a raw `psql < schema.sql` init
 	// also gets it. schema.sql is Exec'd on every startup, so it stays idempotent.
