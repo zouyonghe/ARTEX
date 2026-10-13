@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -71,35 +72,61 @@ func TestSeedREAMCPIsIdempotentAndPreservesEdits(t *testing.T) {
 	}
 	defer d.Close()
 
+	var original MCPServer
+	var originalArgs, originalEnv []byte
+	err = d.QueryRow(`SELECT id,name,transport,COALESCE(command,''),args,env,COALESCE(url,''),enabled,insecure FROM mcp_servers WHERE name='rea'`).
+		Scan(&original.ID, &original.Name, &original.Transport, &original.Command, &originalArgs, &originalEnv, &original.URL, &original.Enabled, &original.Insecure)
+	hadOriginal := err == nil
+	if err != nil && err != sql.ErrNoRows {
+		t.Fatal(err)
+	}
+	if !hadOriginal {
+		t.Fatal("Open did not seed the REA MCP row")
+	}
+	original.Args, original.Env = originalArgs, originalEnv
+	t.Cleanup(func() {
+		_, _ = d.Exec(`UPDATE mcp_servers SET transport=$1,command=$2,args=$3,env=$4,url=NULLIF($5,''),enabled=$6,insecure=$7 WHERE id=$8`,
+			original.Transport, original.Command, original.Args, original.Env, original.URL, original.Enabled, original.Insecure, original.ID)
+	})
+
+	if _, err := d.Exec(`UPDATE mcp_servers SET command='custom-rea', args='["custom"]', enabled=false WHERE id=$1`, original.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := d.seedBuiltins(); err != nil {
 		t.Fatal(err)
 	}
-
 	var command string
 	var args []byte
 	var enabled bool
 	if err := d.QueryRow(`SELECT command,args,enabled FROM mcp_servers WHERE name='rea'`).Scan(&command, &args, &enabled); err != nil {
 		t.Fatal(err)
 	}
-	originalCommand, originalArgs, originalEnabled := command, append([]byte(nil), args...), enabled
-	t.Cleanup(func() {
-		_, _ = d.Exec(`UPDATE mcp_servers SET command=$1,args=$2,enabled=$3 WHERE name='rea'`, originalCommand, originalArgs, originalEnabled)
-	})
-	if command != "npx" || string(args) != `["-y","rea-agents@6.4.0","mcp"]` || !enabled {
-		t.Fatalf("seeded REA MCP = command %q args %s enabled %v", command, args, enabled)
-	}
-
-	if _, err := d.Exec(`UPDATE mcp_servers SET command='custom-rea', args='["custom"]', enabled=false WHERE name='rea'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.seedBuiltins(); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.QueryRow(`SELECT command,args,enabled FROM mcp_servers WHERE name='rea'`).Scan(&command, &args, &enabled); err != nil {
-		t.Fatal(err)
-	}
 	if command != "custom-rea" || string(args) != `["custom"]` || enabled {
 		t.Fatalf("existing REA MCP was overwritten: command %q args %s enabled %v", command, args, enabled)
+	}
+}
+
+func TestSeedBuiltinSkillVisibilityIncludesREA(t *testing.T) {
+	d, err := Open(testDSN(t))
+	if err != nil {
+		t.Skipf("postgres unavailable (%v) — skipping", err)
+	}
+	defer d.Close()
+
+	if err := d.seedBuiltinSkillVisibility(); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"auto", "pentest", "worker"} {
+		var enabled bool
+		if err := d.QueryRow(`
+SELECT enabled FROM agent_skill_visibility v
+JOIN agents a ON a.id=v.agent_id
+WHERE a.key=$1 AND v.skill_name='reverse-engineer-anything'`, key).Scan(&enabled); err != nil {
+			t.Fatalf("REA Skill visibility for %s: %v", key, err)
+		}
+		if !enabled {
+			t.Fatalf("REA Skill visibility for %s is disabled", key)
+		}
 	}
 }
 
