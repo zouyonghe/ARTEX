@@ -1,8 +1,8 @@
 package llm
 
 import (
+	"bytes"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -69,7 +69,16 @@ func TestSanitizeRequiresResultsInTheSameExchange(t *testing.T) {
 			if !slices.Equal(gotResults, tc.wantResults) {
 				t.Fatalf("results=%v, want payloads %v", gotResults, tc.wantResults)
 			}
-			if again := sanitizeOpenAIMessages(got, true); !reflect.DeepEqual(got, again) {
+			before, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again := sanitizeOpenAIMessages(got, true)
+			after, err := json.Marshal(again)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
 				t.Fatal("send guard is not idempotent")
 			}
 		})
