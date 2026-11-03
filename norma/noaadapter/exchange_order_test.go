@@ -16,22 +16,25 @@ import (
 
 func assertAdjacentExchanges(t *testing.T, msgs []llm.Message) {
 	t.Helper()
+	if err := validateAdjacentExchanges(msgs); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func validateAdjacentExchanges(msgs []llm.Message) error {
 	pending := map[string]bool{}
 	for i, m := range msgs {
 		if m.Role == llm.RoleAssistant && len(pending) > 0 {
-			t.Fatalf("assistant message %d interrupts pending results %v", i, pending)
+			return fmt.Errorf("assistant message %d interrupts pending results %v", i, pending)
 		}
 		for _, b := range m.Content {
 			if b.Type == llm.BlockToolResult {
 				if !pending[b.ToolUseID] {
-					t.Fatalf("unexpected result %q at message %d", b.ToolUseID, i)
+					return fmt.Errorf("unexpected result %q at message %d", b.ToolUseID, i)
 				}
 				delete(pending, b.ToolUseID)
-			}
-		}
-		for _, b := range m.Content {
-			if m.Role == llm.RoleUser && b.Type != llm.BlockToolResult && len(pending) > 0 {
-				t.Fatalf("user message %d interrupts pending results %v", i, pending)
+			} else if m.Role == llm.RoleUser && len(pending) > 0 {
+				return fmt.Errorf("user message %d interrupts pending results %v", i, pending)
 			}
 			if b.Type == llm.BlockToolUse {
 				pending[b.ID] = true
@@ -39,7 +42,22 @@ func assertAdjacentExchanges(t *testing.T, msgs []llm.Message) {
 		}
 	}
 	if len(pending) != 0 {
-		t.Fatalf("unanswered calls: %v", pending)
+		return fmt.Errorf("unanswered calls: %v", pending)
+	}
+	return nil
+}
+
+func TestExchangeValidatorRejectsSummaryBeforeToolResults(t *testing.T) {
+	err := validateAdjacentExchanges([]llm.Message{
+		assistantWith(toolUse("a", "Read", `{}`), toolUse("b", "Read", `{}`)),
+		{Role: llm.RoleUser, Content: []llm.ContentBlock{
+			llm.TextBlock("summary"),
+			toolResult("a", "first").Content[0],
+			toolResult("b", "second").Content[0],
+		}},
+	})
+	if err == nil {
+		t.Fatal("accepted summary text before pending tool results")
 	}
 }
 

@@ -85,19 +85,9 @@ func TestTierNudgeNamesItsTargetsInAReadableFormat(t *testing.T) {
 	t.Skip("no tier nudge fired in this run")
 }
 
-// The gap that remains: on a small window tier 2 never fires, for two reasons
-// that are both absolute constants sized for a 200K window.
-//
-//   - The session lives above MaxContextLimitPct, so decidePressure runs, and it
-//     picks the tier with the most pending tokens. Tier 1 is raw content and
-//     tier 2 is the ~10:1 summary of it, so tier 1 wins every comparison. (The
-//     count-based Tier2Trigger that exists precisely to correct this lives only
-//     in decideGrowth, which pressure skips.)
-//   - When tier 1 IS exhausted, the tier-1 summaries total a few thousand tokens
-//     — a large share of a small window, but under the flat 5000-token
-//     minPressureBenefit, so the nudge is declined as not worth a turn.
-//
-// Small supported windows must still advance beyond tier 1.
+// A small supported window must still consolidate tier-1 summaries. The
+// count-based tier-2 trigger runs in the growth band; minPressureBenefit only
+// gates nudges in the separate pressure band.
 func TestTierTwoRemainsReachableOnSmallWindows(t *testing.T) {
 	const window = 40_000
 	sess := simSession(t, window)
