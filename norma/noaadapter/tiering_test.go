@@ -97,11 +97,8 @@ func TestTierNudgeNamesItsTargetsInAReadableFormat(t *testing.T) {
 //     — a large share of a small window, but under the flat 5000-token
 //     minPressureBenefit, so the nudge is declined as not worth a turn.
 //
-// This test documents the boundary rather than asserting a fix. If a window this
-// small is not a supported configuration, it can be deleted; if it is, the two
-// constants need to scale (see noa.TestSuppressionReleaseFitsInsideTheWindow for
-// the same pattern in the nudge cadence).
-func TestTierTwoIsUnreachableOnSmallWindows(t *testing.T) {
+// Small supported windows must still advance beyond tier 1.
+func TestTierTwoRemainsReachableOnSmallWindows(t *testing.T) {
 	const window = 40_000
 	sess := simSession(t, window)
 	a := newSimAgent(t, sess, 1)
@@ -118,15 +115,12 @@ func TestTierTwoIsUnreachableOnSmallWindows(t *testing.T) {
 			summaryTokens += noa.DefaultCountTokens(b.Summary)
 		}
 	}
-	minBen := max(5000, window/100)
-	if byTier[2] > 0 {
-		t.Fatalf("tier 2 now fires at a %d window (blocks %v) — the documented limitation is "+
-			"fixed and this test should be replaced by an assertion that it keeps working",
-			window, byTier)
+	if byTier[2] == 0 {
+		t.Fatalf("tier 2 did not fire at a %d-token window (blocks %v)", window, byTier)
 	}
-	t.Logf("window=%d: %d tier-1 blocks holding %d summary tokens (%.0f%% of the window), "+
-		"below the flat minPressureBenefit of %d — tier 2 is declined as not worth a turn",
-		window, byTier[1], summaryTokens, float64(summaryTokens)*100/window, minBen)
+	if summaryTokens == 0 {
+		t.Fatal("tier-1 summaries should remain present after tier-2 consolidation")
+	}
 }
 
 // Consolidation must actually pay: a tier-2 block has to be smaller than the
