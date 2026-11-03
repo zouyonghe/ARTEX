@@ -159,6 +159,9 @@ func sanitizeResponsesMessages(msgs []Message) []Message {
 			pending[id] = true
 		}
 		for j := i + 1; j < len(msgs) && msgs[j].Role == RoleUser && len(pending) > 0; j++ {
+			if len(msgs[j].Content) == 0 {
+				break
+			}
 			interrupted := false
 			for k, block := range msgs[j].Content {
 				if block.Type == BlockToolResult {

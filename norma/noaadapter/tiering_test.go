@@ -19,8 +19,7 @@ import (
 
 // The end-to-end property: a long cooperative session advances past tier 1.
 func TestLongSessionReachesTierTwo(t *testing.T) {
-	// 128K is the smallest shipped window where this holds; see
-	// TestTierTwoIsUnreachableOnSmallWindows for why 40K does not.
+	// Use a long cooperative run to exercise the tier-2 path at a standard window.
 	sess := simSession(t, 128_000)
 	a := newSimAgent(t, sess, 1)
 	for range 182 {

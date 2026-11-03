@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -197,10 +198,13 @@ func TestResponsesBodySanitizesToolExchangeResults(t *testing.T) {
 		case "function_call":
 			calls = append(calls, item.CallID)
 		case "function_call_output":
-			results = append(results, item.CallID)
+			if item.Output == nil {
+				t.Fatalf("call %q output missing", item.CallID)
+			}
+			results = append(results, item.CallID+":"+*item.Output)
 		}
 	}
-	if strings.Join(calls, ",") != "a,b" || strings.Join(results, ",") != "b,a" {
+	if strings.Join(calls, ",") != "a,b" || !slices.Equal(results, []string{"b:second", "a:first"}) {
 		t.Fatalf("calls=%v results=%v input=%+v", calls, results, got.Input)
 	}
 }
@@ -229,6 +233,27 @@ func TestResponsesBodyDropsResultsAfterInterveningSummary(t *testing.T) {
 	}
 	if len(got.Input) != 1 || got.Input[0].Role != "user" || got.Input[0].Content != "summary" {
 		t.Fatalf("interrupted exchange was not removed: %+v", got.Input)
+	}
+}
+
+func TestResponsesBodyDoesNotPairAcrossEmptyUserMessage(t *testing.T) {
+	p := &openaiResponsesProvider{cfg: Config{Model: "fixture"}}
+	body, err := p.buildBody(CompletionRequest{Messages: []Message{
+		{Role: RoleAssistant, Content: []ContentBlock{{Type: BlockToolUse, ID: "a", Name: "Read", Input: []byte(`{}`)}}},
+		{Role: RoleUser},
+		{Role: RoleUser, Content: []ContentBlock{ToolResultText("a", "late", false)}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Input []orInputItem `json:"input"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Input) != 0 {
+		t.Fatalf("tool result crossed an empty user-message boundary: %+v", got.Input)
 	}
 }
 

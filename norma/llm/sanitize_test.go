@@ -3,6 +3,7 @@ package llm
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -37,24 +38,36 @@ func TestSanitizeRequiresResultsInTheSameExchange(t *testing.T) {
 	call := oaMessage{Role: "assistant", ToolCalls: []oaToolCall{oaCall("a")}}
 	result := oaMessage{Role: "tool", ToolCallID: "a", Content: "original result"}
 	for _, tc := range []struct {
-		name    string
-		msgs    []oaMessage
-		results int
+		name        string
+		msgs        []oaMessage
+		wantResults []string
 	}{
-		{"summary between call and result", []oaMessage{call, {Role: "user", Content: "summary"}, result}, 0},
-		{"result precedes call", []oaMessage{result, call}, 0},
-		{"assistant interrupts", []oaMessage{call, {Role: "assistant", Content: "interrupted"}, result}, 0},
-		{"old result cannot answer reused id", []oaMessage{call, result, call}, 1},
-		{"duplicate result", []oaMessage{call, result, result}, 1},
-		{"duplicate call", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("a"), oaCall("a")}}, result}, 1},
-		{"empty ids", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("")}}, {Role: "tool"}}, 0},
-		{"parallel reverse completion", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("a"), oaCall("b")}}, {Role: "tool", ToolCallID: "b", Content: "second"}, result}, 2},
+		{"summary between call and result", []oaMessage{call, {Role: "user", Content: "summary"}, result}, nil},
+		{"result precedes call", []oaMessage{result, call}, nil},
+		{"assistant interrupts", []oaMessage{call, {Role: "assistant", Content: "interrupted"}, result}, nil},
+		{"old result cannot answer reused id", []oaMessage{call, result, call}, []string{"a:original result"}},
+		{"duplicate result", []oaMessage{call, result, {Role: "tool", ToolCallID: "a", Content: "duplicate payload"}}, []string{"a:original result"}},
+		{"duplicate call", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("a"), oaCall("a")}}, result}, []string{"a:original result"}},
+		{"empty ids", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("")}}, {Role: "tool"}}, nil},
+		{"parallel reverse completion", []oaMessage{{Role: "assistant", ToolCalls: []oaToolCall{oaCall("a"), oaCall("b")}}, {Role: "tool", ToolCallID: "b", Content: "second"}, result}, []string{"b:second", "a:original result"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := sanitizeOpenAIMessages(tc.msgs, true)
 			assertOpenAIToolOrder(t, got)
-			if countRole(got, "tool") != tc.results {
-				t.Fatalf("result count: %d, want %d", countRole(got, "tool"), tc.results)
+			gotResults := make([]string, 0, countRole(got, "tool"))
+			seenResults := make(map[string]bool)
+			for _, message := range got {
+				if message.Role != "tool" {
+					continue
+				}
+				if seenResults[message.ToolCallID] {
+					t.Fatalf("duplicate result survived for %q", message.ToolCallID)
+				}
+				seenResults[message.ToolCallID] = true
+				gotResults = append(gotResults, message.ToolCallID+":"+message.Content)
+			}
+			if !slices.Equal(gotResults, tc.wantResults) {
+				t.Fatalf("results=%v, want payloads %v", gotResults, tc.wantResults)
 			}
 			if again := sanitizeOpenAIMessages(got, true); !reflect.DeepEqual(got, again) {
 				t.Fatal("send guard is not idempotent")

@@ -299,8 +299,8 @@ func TestTier1ArchivesContainTheOriginalText(t *testing.T) {
 // If a link is broken, a summary points at a file that points nowhere, and the
 // content is unreachable even though it is still on disk.
 func TestArchiveChainReachesRawContentFromEveryTier(t *testing.T) {
-	// 128K: the smallest window where consolidation actually fires, so the chain
-	// has more than one link to walk. See TestTierTwoIsUnreachableOnSmallWindows.
+	// Use the established 128K multi-tier fixture; small-window reachability is
+	// covered separately by TestTierTwoRemainsReachableOnSmallWindows.
 	sess := simSession(t, 128_000)
 	a := newSimAgent(t, sess, 1)
 	for range 182 {
