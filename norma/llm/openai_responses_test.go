@@ -156,7 +156,7 @@ func TestToResponsesInput(t *testing.T) {
 	if in[2].Type != "function_call" || in[2].CallID != "c1" || in[2].Name != "Bash" {
 		t.Fatalf("item2=%+v", in[2])
 	}
-	if in[3].Type != "function_call_output" || in[3].CallID != "c1" || in[3].Output != "file.txt" {
+	if in[3].Type != "function_call_output" || in[3].CallID != "c1" || in[3].Output == nil || *in[3].Output != "file.txt" {
 		t.Fatalf("item3=%+v", in[3])
 	}
 	// thinking must not leak into any item.
@@ -165,6 +165,97 @@ func TestToResponsesInput(t *testing.T) {
 			t.Fatalf("thinking leaked: %+v", it)
 		}
 	}
+}
+
+func TestResponsesBodySanitizesToolExchangeResults(t *testing.T) {
+	p := &openaiResponsesProvider{cfg: Config{Model: "fixture"}}
+	body, err := p.buildBody(CompletionRequest{Messages: []Message{
+		{Role: RoleUser, Content: []ContentBlock{ToolResultText("old", "stale", false)}},
+		{Role: RoleAssistant, Content: []ContentBlock{
+			{Type: BlockToolUse, ID: "a", Name: "Read", Input: []byte(`{}`)},
+			{Type: BlockToolUse, ID: "b", Name: "Read", Input: []byte(`{}`)},
+		}},
+		{Role: RoleUser, Content: []ContentBlock{
+			ToolResultText("b", "second", false),
+			ToolResultText("a", "first", false),
+			ToolResultText("b", "duplicate", false),
+			ToolResultText("orphan", "orphan", false),
+		}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Input []orInputItem `json:"input"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	var calls, results []string
+	for _, item := range got.Input {
+		switch item.Type {
+		case "function_call":
+			calls = append(calls, item.CallID)
+		case "function_call_output":
+			results = append(results, item.CallID)
+		}
+	}
+	if strings.Join(calls, ",") != "a,b" || strings.Join(results, ",") != "b,a" {
+		t.Fatalf("calls=%v results=%v input=%+v", calls, results, got.Input)
+	}
+}
+
+func TestResponsesBodyDropsResultsAfterInterveningSummary(t *testing.T) {
+	p := &openaiResponsesProvider{cfg: Config{Model: "fixture"}}
+	body, err := p.buildBody(CompletionRequest{Messages: []Message{
+		{Role: RoleAssistant, Content: []ContentBlock{
+			{Type: BlockToolUse, ID: "a", Name: "Read", Input: []byte(`{}`)},
+			{Type: BlockToolUse, ID: "b", Name: "Read", Input: []byte(`{}`)},
+		}},
+		{Role: RoleUser, Content: []ContentBlock{
+			TextBlock("summary"),
+			ToolResultText("a", "first", false),
+			ToolResultText("b", "second", false),
+		}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Input []orInputItem `json:"input"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Input) != 1 || got.Input[0].Role != "user" || got.Input[0].Content != "summary" {
+		t.Fatalf("interrupted exchange was not removed: %+v", got.Input)
+	}
+}
+
+func TestResponsesBodyKeepsEmptyToolResultOutput(t *testing.T) {
+	p := &openaiResponsesProvider{cfg: Config{Model: "fixture"}}
+	body, err := p.buildBody(CompletionRequest{Messages: []Message{
+		{Role: RoleAssistant, Content: []ContentBlock{{Type: BlockToolUse, ID: "empty", Name: "Read", Input: []byte(`{}`)}}},
+		{Role: RoleUser, Content: []ContentBlock{ToolResultText("empty", "", false)}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Input []map[string]json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range got.Input {
+		if string(item["type"]) == `"function_call_output"` {
+			if output, ok := item["output"]; !ok || string(output) != `""` {
+				t.Fatalf("empty output missing or changed: %s", body)
+			}
+			return
+		}
+	}
+	t.Fatalf("function_call_output missing: %s", body)
 }
 
 // event wraps a data payload with a named SSE event line (Responses uses these).

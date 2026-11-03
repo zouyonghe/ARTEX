@@ -45,13 +45,13 @@ type orReasoning struct {
 // function_call / function_call_output item. omitempty keeps each shape minimal
 // so the API sees exactly one well-formed variant per item.
 type orInputItem struct {
-	Type      string `json:"type,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Content   string `json:"content,omitempty"`
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
+	Type      string  `json:"type,omitempty"`
+	Role      string  `json:"role,omitempty"`
+	Content   string  `json:"content,omitempty"`
+	CallID    string  `json:"call_id,omitempty"`
+	Name      string  `json:"name,omitempty"`
+	Arguments string  `json:"arguments,omitempty"`
+	Output    *string `json:"output,omitempty"`
 }
 
 type orTool struct {
@@ -89,6 +89,7 @@ func (p *openaiResponsesProvider) buildBody(req CompletionRequest, stream bool) 
 // replay (mirrors the Chat Completions adapter's default and avoids echoing
 // provider-specific reasoning state the Responses API manages itself).
 func toResponsesInput(msgs []Message) []orInputItem {
+	msgs = sanitizeResponsesMessages(msgs)
 	var out []orInputItem
 	for _, m := range msgs {
 		role := string(m.Role)
@@ -115,10 +116,90 @@ func toResponsesInput(msgs []Message) []orInputItem {
 				out = append(out, orInputItem{Type: "function_call", CallID: b.ID, Name: b.Name, Arguments: args})
 			case BlockToolResult:
 				flushText()
-				out = append(out, orInputItem{Type: "function_call_output", CallID: b.ToolUseID, Output: flattenText(b.Content)})
+				output := flattenText(b.Content)
+				out = append(out, orInputItem{Type: "function_call_output", CallID: b.ToolUseID, Output: &output})
 			}
 		}
 		flushText()
+	}
+	return out
+}
+
+// sanitizeResponsesMessages keeps only one result per tool call in the
+// immediately following user-result run. Synthetic text or another role ends
+// the run, just as an intervening message does for Chat Completions.
+func sanitizeResponsesMessages(msgs []Message) []Message {
+	acceptedCalls := make(map[int]map[int]bool)
+	acceptedResults := make(map[int]map[int]bool)
+	mark := func(index map[int]map[int]bool, message, block int) {
+		if index[message] == nil {
+			index[message] = make(map[int]bool)
+		}
+		index[message][block] = true
+	}
+
+	for i, message := range msgs {
+		if message.Role != RoleAssistant {
+			continue
+		}
+		calls := make(map[string]int)
+		for j, block := range message.Content {
+			if block.Type == BlockToolUse && block.ID != "" {
+				if _, exists := calls[block.ID]; !exists {
+					calls[block.ID] = j
+				}
+			}
+		}
+		if len(calls) == 0 {
+			continue
+		}
+
+		pending := make(map[string]bool, len(calls))
+		for id := range calls {
+			pending[id] = true
+		}
+		for j := i + 1; j < len(msgs) && msgs[j].Role == RoleUser && len(pending) > 0; j++ {
+			interrupted := false
+			for k, block := range msgs[j].Content {
+				if block.Type == BlockToolResult {
+					if pending[block.ToolUseID] {
+						mark(acceptedResults, j, k)
+						delete(pending, block.ToolUseID)
+					}
+				} else if len(pending) > 0 {
+					interrupted = true
+					break
+				}
+			}
+			if interrupted {
+				break
+			}
+		}
+		for id, block := range calls {
+			if !pending[id] {
+				mark(acceptedCalls, i, block)
+			}
+		}
+	}
+
+	out := make([]Message, len(msgs))
+	for i, message := range msgs {
+		out[i] = message
+		out[i].Content = make([]ContentBlock, 0, len(message.Content))
+		for j, block := range message.Content {
+			switch block.Type {
+			case BlockToolUse:
+				if acceptedCalls[i][j] {
+					out[i].Content = append(out[i].Content, block)
+				}
+			case BlockToolResult:
+				if acceptedResults[i][j] {
+					out[i].Content = append(out[i].Content, block)
+				}
+			default:
+				out[i].Content = append(out[i].Content, block)
+			}
+		}
 	}
 	return out
 }
